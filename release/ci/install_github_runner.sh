@@ -19,7 +19,6 @@ BUILDS_DIR="${BASE_DIR}/builds"
 LOGS_DIR="${BASE_DIR}/logs"
 CACHE_DIR="${BASE_DIR}/cache"
 OPENPILOT_DIR="${BASE_DIR}/openpilot"
-SERVICE_NAME="github-runner"
 
 create_directories() {
     sudo mkdir -p "$RUNNER_DIR" "$BUILDS_DIR" "$LOGS_DIR" "$CACHE_DIR" "$OPENPILOT_DIR"
@@ -56,27 +55,28 @@ set_directory_permissions() {
     sudo chmod g+s "$BASE_DIR"
 }
 
-create_runner_service() {
-    cat <<EOL | sudo tee /etc/systemd/system/${SERVICE_NAME}.service
+modify_service_template() {
+    cat <<EOL > "$RUNNER_DIR/bin/actions.runner.service.template"
 [Unit]
-Description=GitHub Runner
-After=syslog.target network.target
+Description={{Description}}
+After=network.target
+StartLimitInterval=5
+StartLimitBurst=10
+
 [Service]
 Type=simple
-User=${RUNNER_USER}
-WorkingDirectory=${RUNNER_DIR}
-ExecStart=/usr/bin/unshare -m -- sh -c 'mount --bind $OPENPILOT_DIR /data/openpilot && exec ${RUNNER_DIR}/run.sh'
+User=root
+ExecStart=/usr/bin/unshare -m -- sh -c 'mount --bind ${OPENPILOT_DIR} /data/openpilot && su -c "{{RunnerRoot}}/runsvc.sh" {{User}}'
+WorkingDirectory={{RunnerRoot}}
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=5min
 Restart=always
 RestartSec=120
+
 [Install]
 WantedBy=multi-user.target
 EOL
-}
-
-start_runner_service() {
-    sudo systemctl daemon-reload
-    sudo systemctl disable ${SERVICE_NAME}
-    sudo systemctl start ${SERVICE_NAME}
 }
 
 # Make filesystem writable
@@ -90,7 +90,11 @@ setup_runner_user
 create_sudoers_entry
 create_directories
 download_and_setup_runner
+modify_service_template
 configure_runner
 set_directory_permissions
-create_runner_service
-start_runner_service
+
+# Install and start service using built-in installer
+cd "$RUNNER_DIR"
+sudo ./svc.sh install $RUNNER_USER
+sudo ./svc.sh start
