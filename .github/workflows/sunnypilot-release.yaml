@@ -24,6 +24,13 @@ on:
 jobs:
   build:
     runs-on: self-hosted
+    outputs:
+      auto_build: ${{ steps.set-env.outputs.auto_build }}
+      auto_publish: ${{ steps.set-env.outputs.auto_publish }}
+      new_branch: ${{ steps.set-env.outputs.new_branch }}
+      version: ${{ steps.set-env.outputs.version }}
+      extra_version_identifier: ${{ steps.set-env.outputs.extra_version_identifier }}
+    
     if: |
       !contains(github.event.head_commit.message, 'wip:') && 
       !contains(github.event.head_commit.message, 'draft:')
@@ -34,28 +41,29 @@ jobs:
           submodules: recursive
 
       - name: Set environment variables
+        id: set-env
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "NEW_BRANCH=${GITHUB_REF_NAME}-prebuilt" >> $GITHUB_ENV
-            echo "EXTRA_VERSION_IDENTIFIER=${{ github.event.inputs.extra_version || github.run_number }}" >> $GITHUB_ENV
-            echo "VERSION=$(date '+%Y.%m.%d')" >> $GITHUB_ENV
+            echo "new_branch=${GITHUB_REF_NAME}-prebuilt" >> $GITHUB_OUTPUT
+            echo "extra_version_identifier=${{ github.event.inputs.extra_version || github.run_number }}" >> $GITHUB_OUTPUT
+            echo "version=$(date '+%Y.%m.%d')" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref_name }}" == "${{ env.DEV_C3_SOURCE_BRANCH }}" ]]; then
-            echo "NEW_BRANCH=dev-c3" >> $GITHUB_ENV
-            echo "EXTRA_VERSION_IDENTIFIER=${{ github.run_number }}" >> $GITHUB_ENV
-            echo "AUTO_BUILD=true" >> $GITHUB_ENV
+            echo "new_branch=dev-c3" >> $GITHUB_OUTPUT
+            echo "extra_version_identifier=${{ github.run_number }}" >> $GITHUB_OUTPUT
+            echo "auto_build=true" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == "refs/heads/master" ]]; then
-            echo "NEW_BRANCH=staging-c3" >> $GITHUB_ENV
-            echo "EXTRA_VERSION_IDENTIFIER=staging" >> $GITHUB_ENV
-            echo "AUTO_BUILD=true" >> $GITHUB_ENV
-            echo "AUTO_PUBLISH=true" >> $GITHUB_ENV
-            echo "VERSION=$(cat common/version.h | grep COMMA_VERSION | sed -e 's/[^0-9|.]//g')" >> $GITHUB_ENV
+            echo "new_branch=staging-c3" >> $GITHUB_OUTPUT
+            echo "extra_version_identifier=staging" >> $GITHUB_OUTPUT
+            echo "auto_build=true" >> $GITHUB_OUTPUT
+            echo "auto_publish=true" >> $GITHUB_OUTPUT
+            echo "version=$(cat common/version.h | grep COMMA_VERSION | sed -e 's/[^0-9|.]//g')" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "NEW_BRANCH=release-c3" >> $GITHUB_ENV
-            echo "EXTRA_VERSION_IDENTIFIER=release" >> $GITHUB_ENV
-            echo "AUTO_BUILD=true" >> $GITHUB_ENV
-            echo "VERSION=$(cat common/version.h | grep COMMA_VERSION | sed -e 's/[^0-9|.]//g')" >> $GITHUB_ENV
+            echo "new_branch=release-c3" >> $GITHUB_OUTPUT
+            echo "extra_version_identifier=release" >> $GITHUB_OUTPUT
+            echo "auto_build=true" >> $GITHUB_OUTPUT
+            echo "version=$(cat common/version.h | grep COMMA_VERSION | sed -e 's/[^0-9|.]//g')" >> $GITHUB_OUTPUT
           else
-            echo "VERSION=$(date '+%Y.%m.%d')-${{ github.run_number }}" >> $GITHUB_ENV
+            echo "version=$(date '+%Y.%m.%d')-${{ github.run_number }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Setup build environment
@@ -65,7 +73,7 @@ jobs:
           echo "Starting build stage..."
           echo "BUILD_DIR: ${BUILD_DIR}"
           echo "CI_DIR: ${CI_DIR}"
-          echo "VERSION: ${VERSION}"
+          echo "VERSION: ${{ steps.set-env.outputs.version }}"
 
       - name: Build Panda
         run: |
@@ -138,7 +146,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
-      env.AUTO_BUILD == 'true'
+      needs.build.outputs.auto_build == 'true'
     
     steps:
       - uses: actions/checkout@v4
@@ -168,16 +176,16 @@ jobs:
           ${{ env.CI_DIR }}/publish.sh \
             "${{ github.workspace }}" \
             "${{ env.OUTPUT_DIR }}" \
-            "${{ env.NEW_BRANCH }}" \
-            "${{ env.VERSION }}" \
+            "${{ needs.build.outputs.new_branch }}" \
+            "${{ needs.build.outputs.version }}" \
             "git@gitlab.com:sunnypilot/public/sunnypilot-prebuilts.git" \
-            "-${{ env.EXTRA_VERSION_IDENTIFIER }}"
+            "-${{ needs.build.outputs.extra_version_identifier }}"
 
   publish-public:
     needs: build
     runs-on: ubuntu-latest
     if: |
-      env.AUTO_PUBLISH == 'true' ||
+      needs.build.outputs.auto_publish == 'true' ||
       github.event_name == 'workflow_dispatch'
     environment: manual-approval
     
@@ -185,7 +193,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4.1.7
+        uses: actions/download-artifact@v3
         with:
           name: build-output
           path: ${{ env.OUTPUT_DIR }}
@@ -209,15 +217,15 @@ jobs:
           ${{ env.CI_DIR }}/publish.sh \
             "${{ github.workspace }}" \
             "${{ env.OUTPUT_DIR }}" \
-            "${{ env.NEW_BRANCH }}" \
-            "${{ env.VERSION }}" \
+            "${{ needs.build.outputs.new_branch }}" \
+            "${{ needs.build.outputs.version }}" \
             "git@github.com:sunnyhaibin/sunnypilot.git" \
-            "-${{ env.EXTRA_VERSION_IDENTIFIER }}"
+            "-${{ needs.build.outputs.extra_version_identifier }}"
 
   notify:
-    needs: [publish-private, publish-public]
+    needs: [build, publish-private, publish-public]
     runs-on: ubuntu-latest
-    if: always() && env.NEW_BRANCH != ''
+    if: always() && needs.build.outputs.new_branch != ''
     
     steps:
       - uses: actions/checkout@v4
@@ -229,10 +237,10 @@ jobs:
 
       - name: Send Discord Notification
         env:
-          DISCORD_WEBHOOK: ${{ env.NEW_BRANCH == 'dev-c3' && secrets.DISCORD_NEW_BUILD_WEBHOOK_URL || secrets.DISCORD_MANUAL_BUILD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK: ${{ needs.build.outputs.new_branch == 'dev-c3' && secrets.DISCORD_NEW_BUILD_WEBHOOK_URL || secrets.DISCORD_MANUAL_BUILD_WEBHOOK_URL }}
         run: |
-          TEMPLATE="${{ env.NEW_BRANCH == 'dev-c3' && 'discord_template_notify_dev_public.json' || 'discord_template_notify_dev_private.json' }}"
-          export EXTRA_VERSION_IDENTIFIER="${{ env.EXTRA_VERSION_IDENTIFIER }}"
-          export VERSION="${{ env.VERSION }}"
+          TEMPLATE="${{ needs.build.outputs.new_branch == 'dev-c3' && 'discord_template_notify_dev_public.json' || 'discord_template_notify_dev_private.json' }}"
+          export EXTRA_VERSION_IDENTIFIER="${{ needs.build.outputs.extra_version_identifier }}"
+          export VERSION="${{ needs.build.outputs.version }}"
           cat release/ci/${TEMPLATE} | envsubst > payload.json
           curl -X POST -H "Content-Type: application/json" -d @payload.json $DISCORD_WEBHOOK
