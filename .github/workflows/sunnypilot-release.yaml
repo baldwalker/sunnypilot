@@ -77,6 +77,7 @@ jobs:
 
       - name: Build Panda
         run: |
+          source /etc/profile;
           scons -j$(nproc) cache_dir=${CI_DIR}/scons_cache ${{ github.workspace }}/panda
 
       - name: Build Main Project
