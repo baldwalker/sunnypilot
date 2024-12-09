@@ -43,6 +43,7 @@ jobs:
       - name: Set environment variables
         id: set-env
         run: |
+          source /etc/profile;
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "new_branch=${GITHUB_REF_NAME}-prebuilt" >> $GITHUB_OUTPUT
             echo "extra_version_identifier=${{ github.event.inputs.extra_version || github.run_number }}" >> $GITHUB_OUTPUT
