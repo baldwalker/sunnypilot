@@ -78,7 +78,7 @@ jobs:
       - name: Build Panda
         run: |
           source /etc/profile;
-          scons -j$(nproc) cache_dir=${CI_DIR}/scons_cache ${{ github.workspace }}/panda
+          uv run scons -j$(nproc) cache_dir=${CI_DIR}/scons_cache ${{ github.workspace }}/panda
 
       - name: Build Main Project
         run: |
@@ -87,7 +87,7 @@ jobs:
           ./release/release_files.py | sort | uniq | rsync -vrRl --files-from=- . $BUILD_DIR/
           cd $BUILD_DIR
           sed -i '/from .board.jungle import PandaJungle, PandaJungleDFU/s/^/#/' panda/__init__.py
-          scons -j$(nproc) cache_dir=${CI_DIR}/scons_cache --minimal
+          uv run scons -j$(nproc) cache_dir=${CI_DIR}/scons_cache --minimal
           touch ${BUILD_DIR}/prebuilt
 
       - name: Prepare Output
