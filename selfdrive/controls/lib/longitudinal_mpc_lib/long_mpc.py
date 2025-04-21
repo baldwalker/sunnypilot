@@ -63,11 +63,11 @@ CRUISE_MAX_ACCEL = 1.6
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
-    return 0.70
+    return 1.0
   elif personality==log.LongitudinalPersonality.standard:
-    return 0.65
+    return 0.95
   elif personality==log.LongitudinalPersonality.aggressive:
-    return 0.60
+    return 0.90
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
