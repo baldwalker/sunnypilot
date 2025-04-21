@@ -43,7 +43,7 @@ SET_MODE_TIMEOUT = 10
 # Values aligned with WMACConstants.SLOW_DOWN_PROB
 MODE_HYSTERESIS = {
   'acc_to_blended': 0.70,    # Higher threshold to switch to blended mode (above SLOW_DOWN_PROB)
-  'blended_to_acc': 0.45     # Lower threshold to switch back to acc mode (below SLOW_DOWN_PROB)
+  'blended_to_acc': 0.50     # Lower threshold to switch back to acc mode (below SLOW_DOWN_PROB)
 }
 
 # Stabilization frames required before allowing mode changes
